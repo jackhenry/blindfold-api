@@ -6,7 +6,6 @@ import { GraphQLModule } from '@nestjs/graphql';
 import { GraphQLDateTime } from 'graphql-iso-date';
 import { MongooseModule } from '@nestjs/mongoose';
 
-import { AppService } from './app.service';
 import { ScoreboardModule } from './scoreboard/scoreboard.module';
 
 const environment = process.env.NODE_ENV || 'development';
@@ -30,6 +29,5 @@ const MONGO_URL = process.env.MONGO_URL;
     }),
     ScoreboardModule,
   ],
-  providers: [AppService],
 })
 export class AppModule {}
