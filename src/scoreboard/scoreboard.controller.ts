@@ -1,14 +1,10 @@
 import { Controller, Get, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
-import { ServerResponse } from 'http';
-import { FastifyReply, FastifyRequest } from 'fastify';
 
 @Controller('scoreboard')
 export class ScoreboardController {
   @Get()
-  hello(@Req() request: FastifyRequest<any>, @Res() reply: FastifyReply<any>) {
-    const req: Request = request.req;
-    const res: Response = reply.res;
+  hello(@Req() req: Request, @Res() res: Response) {
     res.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
