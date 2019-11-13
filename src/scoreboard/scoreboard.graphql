@@ -1,0 +1,51 @@
+type Query {
+  socreboard(id: String): Scoreboard
+  scoreboards(league: String, filterValue: Int): [Scoreboard]
+  findScoreboards(league: String): [Scoreboard]
+  filters(league: String): [Filter]
+}
+
+type Mutation {
+  createScoreboard(input: ScoreboardInput): Scoreboard
+}
+
+type Scoreboard {
+  league: String
+  date: DateTime
+  status: String
+  homeTeamName: String
+  homeTeamQuarters: [String]
+  homeTeamScore: String
+  homeTeamRecord: String
+  homeTeamImage: String
+  homeTeamAbbreviation: String
+  homeTeamColor: String
+  awayTeamName: String
+  awayTeamQuarters: [String]
+  awayTeamScore: String
+  awayTeamRecord: String
+  awayTeamImage: String
+  awayTeamAbbreviation: String
+  awayTeamColor: String
+}
+
+type Filter {
+  league: String!
+  filterLabel: String!
+  filterValue: Int!
+}
+
+input ScoreboardInput {
+  league: String!
+  date: DateTime!
+  status: String!
+  week: Int
+  homeTeamName: String!
+  homeTeamQuarters: [String]!
+  homeTeamScore: String!
+  homeTeamRecord: String
+  awayTeamName: String!
+  awayTeamQuarters: [String]!
+  awayTeamScore: String!
+  awayTeamRecord: String
+}
