@@ -1,6 +1,7 @@
 import { Document } from 'mongoose';
 
 export interface Scoreboard extends Document {
+  gameId: string;
   homeTeamName: string;
   homeTeamQuarters: string[];
   homeTeamScore: string;

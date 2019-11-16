@@ -1,6 +1,7 @@
 import * as mongoose from 'mongoose';
 
 export const ScoreBoardSchema = new mongoose.Schema({
+  gameId: String,
   homeTeamName: String,
   homeTeamQuarters: [String],
   homeTeamScore: String,
