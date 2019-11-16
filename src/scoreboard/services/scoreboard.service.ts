@@ -2,14 +2,24 @@ import { Injectable, Inject } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { format } from 'date-fns';
+import * as dayjs from 'dayjs';
+import * as utc from 'dayjs/plugin/utc';
+import * as advancedFormat from 'dayjs/plugin/advancedFormat';
 
 import { Scoreboard } from '../interfaces/scoreboard.interface';
-import { CreateScoreboardDto } from '../interfaces/scoreboard.dto';
+import {
+  CreateScoreboardDto,
+  UpdateScoreboardDto,
+} from '../interfaces/scoreboard.dto';
 
 import Teams from '../../data/teams';
 import { Team } from '../interfaces/team.interface';
 import { Filter } from '../interfaces/filter.interface';
 import { UpdateResult } from '../../mongoose/update.interface';
+import { SSEProvider } from '../providers/sse.provider';
+
+dayjs.extend(utc);
+dayjs.extend(advancedFormat);
 
 @Injectable()
 export class ScoreboardService {
@@ -18,6 +28,7 @@ export class ScoreboardService {
     private readonly scoreboardModel: Model<Scoreboard>,
     @InjectModel('Filter')
     private readonly filterModel: Model<Filter>,
+    private readonly sseProvider: SSEProvider,
   ) {}
 
   /**
@@ -51,68 +62,42 @@ export class ScoreboardService {
       .exec();
   }
 
-  async create(dto: CreateScoreboardDto): Promise<UpdateResult> {
+  async create(dto: CreateScoreboardDto): Promise<Scoreboard> {
+    await this.createFilter(dto);
+    await this.sseProvider.addToBatch(dto);
+    return await new this.scoreboardModel(dto).save();
+  }
+
+  async update(dto: UpdateScoreboardDto): Promise<Scoreboard> {
+    console.log(dto);
     const homeTeamData = this.findTeamDataByTeamName(dto.homeTeamName);
     const awayTeamData = this.findTeamDataByTeamName(dto.awayTeamName);
 
-    const updateResult: UpdateResult = await this.scoreboardModel
-      .updateOne(
-        {
-          date: dto.date,
-          homeTeamName: dto.homeTeamName,
-          awayTeamName: dto.awayTeamName,
-        },
-        {
-          ...dto,
-          ...homeTeamData,
-          ...awayTeamData,
-        },
-        { upsert: true, setDefaultsOnInsert: true },
-      )
+    const updateCondition = {
+      gameId: dto.gameId,
+    };
+
+    const scoreboard = await this.scoreboardModel
+      .findOne(updateCondition)
       .exec();
 
-    if (dto.league.toLowerCase() === 'nfl') {
-      await this.filterModel
-        .updateOne(
-          {
-            league: dto.league,
-            filterValue: dto.week,
-            filterLabel: `Week ${dto.week}`,
-          },
-          {
-            league: dto.league,
-            filterValue: dto.week,
-            filterLabel: `Week ${dto.week}`,
-          },
-          {
-            upsert: true,
-          },
-        )
-        .exec();
-    } else {
-      const date = new Date(dto.date);
-      const formattedDate = format(date, 'MMMM do');
-      const unixTime = date.getTime() / 1000;
-      await this.filterModel
-        .updateOne(
-          {
-            league: dto.league,
-            filterValue: unixTime,
-            filterLabel: formattedDate,
-          },
-          {
-            league: dto.league,
-            filterValue: unixTime,
-            filterLabel: formattedDate,
-          },
-          {
-            upsert: true,
-          },
-        )
-        .exec();
+    // Scoreboard not found, create one
+    if (scoreboard === null) {
+      const createDto = this.mergeTeamData(dto, homeTeamData, awayTeamData);
+      return await this.create(createDto);
     }
 
-    return updateResult;
+    const updateResult = await scoreboard.updateOne(dto).exec();
+
+    await this.createFilter(dto);
+    if (updateResult.nModified > 0) {
+      const originalObj = scoreboard.toObject();
+      const newObj = this.mergeTeamData(dto, homeTeamData, awayTeamData);
+      const diff = this.shallowDiff(dto.gameId, originalObj, newObj);
+      this.sseProvider.addToBatch(diff);
+    }
+
+    return scoreboard;
   }
 
   sortScoreboards(scoreboards: Scoreboard[]): Scoreboard[] {
@@ -135,6 +120,69 @@ export class ScoreboardService {
     );
   }
 
+  mergeTeamData(
+    dto: UpdateScoreboardDto,
+    homeTeam: Team,
+    awayTeam: Team,
+  ): CreateScoreboardDto {
+    return {
+      ...dto,
+      ...homeTeam,
+      ...awayTeam,
+      homeTeamImage: homeTeam.image,
+      homeTeamAbbreviation: homeTeam.abbreviation,
+      homeTeamColor: homeTeam.color,
+      awayTeamImage: awayTeam.image,
+      awayTeamAbbreviation: awayTeam.abbreviation,
+      awayTeamColor: awayTeam.color,
+    };
+  }
+
+  shallowDiff(
+    gameId: string,
+    originalObj: CreateScoreboardDto,
+    newObj: CreateScoreboardDto,
+  ) {
+    const keyBlacklist = ['_id', '__v'];
+    const updatedKeys = Object.keys(originalObj).filter(key => {
+      const originalValue = originalObj[key];
+      const newValue = newObj[key];
+
+      if (key === 'date') {
+        const originalDate = new Date(originalValue);
+        const newDate = new Date(newValue);
+
+        return !(newDate.getTime() === originalDate.getTime());
+      }
+
+      if (originalValue instanceof Date) {
+        return originalValue.getTime() === newValue.getTime();
+      }
+
+      if (keyBlacklist.includes(key)) return false;
+
+      // If array, it is required to check each element
+      if (Array.isArray(originalValue)) {
+        if (originalValue === newValue) return false;
+        if (originalValue.length !== newValue.length) return true;
+        for (let i = 0; i < originalValue.length; i++) {
+          if (originalValue[i] !== newValue[i]) return true;
+        }
+
+        return false;
+      }
+
+      return !(originalObj[key] === newObj[key]);
+    });
+
+    let diff = {
+      gameId: gameId,
+    };
+    updatedKeys.forEach(key => (diff[key] = newObj[key]));
+
+    return diff;
+  }
+
   /**
    * AvailableFilters
    */
@@ -144,5 +192,40 @@ export class ScoreboardService {
       .find({ league: league.toUpperCase() })
       .sort({ filterValue: -1 })
       .exec();
+  }
+
+  async createFilter(dto: UpdateScoreboardDto): Promise<UpdateResult> {
+    //Filter value and label depend directly on if league is nfl
+    const isNFL = dto.week !== null;
+
+    // Needs to be converted to UTC because date will automatically
+    // convert to local timezone.
+    const date = new Date(dto.date);
+    const formattedDate = dayjs.utc(date).format('MMMM Do');
+    const unixTime = dayjs.utc(date).unix();
+
+    // Filter value is either unix time or week if league is nfl
+    const filterValue = isNFL ? dto.week : unixTime;
+    const filterLabel = isNFL ? `Week ${dto.week}` : formattedDate;
+
+    const updateResult: UpdateResult = await this.filterModel
+      .updateOne(
+        {
+          league: dto.league,
+          filterValue: filterValue,
+          filterLabel: filterLabel,
+        },
+        {
+          league: dto.league,
+          filterValue: filterValue,
+          filterLabel: filterLabel,
+        },
+        {
+          upsert: true,
+        },
+      )
+      .exec();
+
+    return updateResult;
   }
 }
