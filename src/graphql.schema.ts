@@ -6,6 +6,7 @@
 
 /* tslint:disable */
 export class ScoreboardInput {
+    gameId: string;
     league: string;
     date: DateTime;
     status: string;
@@ -41,6 +42,7 @@ export abstract class IQuery {
 }
 
 export class Scoreboard {
+    gameId?: string;
     league?: string;
     date?: DateTime;
     status?: string;

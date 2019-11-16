@@ -27,6 +27,6 @@ export class ScoreboardResolver {
 
   @Mutation('createScoreboard')
   async createScoreboard(@Args('input') dto: CreateScoreboardDto) {
-    return await this.scoreboardService.create(dto);
+    return await this.scoreboardService.update(dto);
   }
 }
