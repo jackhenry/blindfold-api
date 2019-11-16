@@ -6,6 +6,7 @@ import { ScoreboardService } from './services/scoreboard.service';
 import { ScoreBoardSchema } from './schemas/scoreboard.schema';
 import { FilterSchema } from './schemas/filter.schema';
 import { ScoreboardController } from './scoreboard.controller';
+import { SSEProvider } from './providers/sse.provider';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { ScoreboardController } from './scoreboard.controller';
       },
     ]),
   ],
-  providers: [ScoreboardResolver, ScoreboardService],
+  providers: [ScoreboardResolver, ScoreboardService, SSEProvider],
   controllers: [ScoreboardController],
 })
 export class ScoreboardModule {}
